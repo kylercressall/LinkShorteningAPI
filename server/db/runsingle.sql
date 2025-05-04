@@ -1,0 +1,2 @@
+-- DELETE FROM users WHERE passwordHash = 'a' OR passwordHash IS NULL;
+-- DELETE FROM links WHERE hostUrl LIKE 'test_'; 

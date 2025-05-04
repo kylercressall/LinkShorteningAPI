@@ -17,7 +17,7 @@
 --  created_on date
 --  
 
-
+-- users stored with a hashed password
 CREATE TABLE IF NOT EXISTS users (
   userId INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT,
@@ -25,9 +25,7 @@ CREATE TABLE IF NOT EXISTS users (
   creationDate DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- INSERT INTO users (username, passwordHash) VALUES ("KylerCressall", "a");
-
-
+-- links hostUrl (addition after localhost.com/:x) forwards to forwardToUrl
 CREATE TABLE IF NOT EXISTS links (
   linkId INTEGER PRIMARY KEY AUTOINCREMENT,
   hostUrl TEXT,
@@ -37,9 +35,6 @@ CREATE TABLE IF NOT EXISTS links (
 
   FOREIGN KEY (userOwner) REFERENCES users(userId)
 );
-
--- INSERT INTO links (hostUrl, forwardToUrl, userOwner) 
--- VALUES ("testlink", "https://google.com", 1)
 
 -- Link stat is created every time a user clicks on the link
 CREATE TABLE IF NOT EXISTS link_stats (
@@ -54,5 +49,4 @@ CREATE TABLE IF NOT EXISTS link_stats (
   language TEXT,
   os TEXT,
   FOREIGN KEY (linkId) REFERENCES links(linkId)
-
 );

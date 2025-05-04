@@ -138,7 +138,8 @@ app.get("/api/users", (req, res) => {
 });
 
 app.get("/api/links", (req, res) => {
-  db.all(`SELECT * FROM links`, [], (err, rows) => {
+  // don't give out owner id's and creation dates
+  db.all(`SELECT linkId, hostUrl, forwardToUrl FROM links`, [], (err, rows) => {
     if (err) {
       res.status(500).send(err.message);
       return;
@@ -252,7 +253,7 @@ app.get("/api/links/:hostname/stats", requireAuth, async (req, res) => {
   );
 });
 
-app.get("/url/:hosturl", async (req, res) => {
+app.get("/:hosturl", async (req, res) => {
   const hosturl = req.params.hosturl;
 
   console.log("hosturl:", hosturl);
@@ -353,6 +354,36 @@ app.post("/api/login", async (req, res) => {
   });
 
   res.status(200).send("Login Successful");
+});
+
+// Create link using logged in user
+app.post("/api/createlink", requireAuth, async (req, res) => {
+  console.log("createlink activated");
+  const userid = req.user.userId;
+  const { hostUrl, forwardToUrl } = req.body;
+
+  if (!userid)
+    return res.status(401).send("You must be logged in to create a link");
+  if (!hostUrl || !forwardToUrl)
+    return res.status(400).send("Hosturl or forwardToUrl is null");
+
+  db.get(`SELECT * FROM links WHERE hostUrl = ?`, [hostUrl], (err, row) => {
+    if (err) return res.status(500).send("Database error");
+    if (row) return res.status(409).send("hostUrl already exists");
+
+    db.run(
+      `INSERT INTO links (hostUrl, forwardToUrl, userOwner) VALUES (?, ?, ?)`,
+      [hostUrl, forwardToUrl, userid],
+      function (err) {
+        if (err) {
+          console.log(err);
+          return res.status(500).send("Insert failed");
+        } else return res.status(201).send("Link created successfully!");
+      }
+    );
+  });
+
+  return res.status(200);
 });
 
 const PORT = process.env.PORT || 5000;
