@@ -55,6 +55,7 @@ function saveClickToDatabase(linkId, clickInfo) {
           reject(err);
           return;
         }
+        console.log("Data created for linkid:", linkId);
         resolve(this.lastID);
       }
     );
@@ -88,6 +89,34 @@ function getHashFromUser(userId) {
           console.warn("user not found!");
           resolve(null);
         }
+      }
+    );
+  });
+}
+
+function requireAuth(req, res, next) {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).send("No token provided");
+
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = payload;
+    console.log(req.user);
+    next();
+  } catch (err) {
+    return res.status(403).send("Invalid token");
+  }
+}
+
+function getIdFromHost(hosturl) {
+  return new Promise((resolve, reject) => {
+    console.log("Finding linkId from hosturl:", hosturl);
+    db.get(
+      `SELECT linkId FROM links WHERE hostUrl = ?`,
+      [hosturl],
+      (err, row) => {
+        console.log("linkid found:", this.linkId);
+        resolve(row.linkId);
       }
     );
   });
@@ -136,53 +165,91 @@ app.get("/api/links/:linkid/rawdata", (req, res) => {
 });
 
 // Get the actual stats of the given link
-app.get("/api/links/:linkid/stats", (req, res) => {
-  const linkid = req.params.linkid;
-  db.all(`SELECT * FROM link_stats WHERE linkId = ?`, [linkid], (err, rows) => {
-    console.log(linkid);
-    if (err) {
-      res.status(500).send(err.message);
-      return;
+app.get("/api/links/:hostname/stats", requireAuth, async (req, res) => {
+  const hostname = req.params.hostname;
+  const linkid = await getIdFromHost(hostname);
+  const userid = req.user.userId;
+
+  console.log("userid:", userid);
+  console.log("hostname:", hostname);
+  console.log("linkid:", linkid);
+
+  if (!linkid) {
+    return res.status(404).json({ error: "Short link not found" });
+  }
+
+  // check the user has access first
+  db.get(
+    `SELECT * FROM links where linkId = ? AND userOwner = ?`,
+    [linkid, userid],
+    (err, row) => {
+      if (err) return res.status(500).send(err.message);
+
+      if (!row) return res.status(403).json({ error: "Access denied" });
+
+      // if they have access then run the query
+      db.all(
+        `SELECT * 
+        FROM link_stats 
+        JOIN links
+        ON links.linkId = link_stats.linkId
+        WHERE link_stats.linkId = ? AND links.userOwner = ?`,
+        [linkid, userid],
+        (err, rows) => {
+          if (err) {
+            res.status(500).send(err.message);
+            return;
+          }
+          if (rows.length === 0) {
+            console.log(rows);
+            res.status(401).json({
+              error:
+                "Link has not been clicked, access denied, or link doesn't exist under current user",
+            });
+            return;
+          }
+
+          const totalClicks = rows.length;
+          const browserCounts = {};
+          const languageCounts = {};
+          const platformCounts = {};
+          const osCounts = {};
+          const ipSet = new Set();
+
+          for (const row of rows) {
+            if (row.browser) {
+              browserCounts[row.browser] =
+                (browserCounts[row.browser] || 0) + 1;
+            }
+            if (row.language) {
+              languageCounts[row.language] =
+                (languageCounts[row.language] || 0) + 1;
+            }
+            if (row.platform) {
+              platformCounts[row.browser] =
+                (platformCounts[row.browser] || 0) + 1;
+            }
+            if (row.os) {
+              osCounts[row.os] = (osCounts[row.os] || 0) + 1;
+            }
+            if (row.ip) {
+              ipSet.add(row.ip);
+            }
+          }
+
+          const uniqueIpCount = ipSet.size;
+
+          res.json({
+            totalClicks,
+            uniqueIpCount,
+            broswerBreakdown: browserCounts,
+            platformBreakdown: platformCounts,
+            osBreakdown: osCounts,
+          });
+        }
+      );
     }
-    if (rows.length === 0) {
-      console.warn("! ------ No linkstats row data returned.");
-    }
-
-    const totalClicks = rows.length;
-    const browserCounts = {};
-    const languageCounts = {};
-    const platformCounts = {};
-    const osCounts = {};
-    const ipSet = new Set();
-
-    for (const row of rows) {
-      if (row.browser) {
-        browserCounts[row.browser] = (browserCounts[row.browser] || 0) + 1;
-      }
-      if (row.language) {
-        languageCounts[row.language] = (languageCounts[row.language] || 0) + 1;
-      }
-      if (row.platform) {
-        platformCounts[row.browser] = (platformCounts[row.browser] || 0) + 1;
-      }
-      if (row.os) {
-        osCounts[row.os] = (osCounts[row.os] || 0) + 1;
-      }
-      if (row.ip) {
-        ipSet.add(row.ip);
-      }
-    }
-
-    const uniqueIpCiount = ipSet.size;
-
-    res.json({
-      totalClicks,
-      uniqueIpCiount,
-      broswerBreakdown: browserCounts,
-      platformBreakdown: platformCounts,
-      osBreakdown: osCounts,
-    });
-  });
+  );
 });
 
 app.get("/url/:hosturl", async (req, res) => {
@@ -192,6 +259,12 @@ app.get("/url/:hosturl", async (req, res) => {
 
   console.log("Before DB lookup");
   const linkData = await findForwardUrlFromDatabase(hosturl);
+
+  if (!linkData) {
+    res.status(401).json({ error: "Link not found" });
+    return;
+  }
+
   const { linkId, forwardToUrl } = linkData;
 
   console.log("After DB lookup, forwardurl:", forwardToUrl);
@@ -268,7 +341,7 @@ app.post("/api/login", async (req, res) => {
     return;
   }
 
-  const token = jwt.sign({ userId: userRecord.id }, process.env.JWT_SECRET, {
+  const token = jwt.sign({ userId: userId }, process.env.JWT_SECRET, {
     expiresIn: "1h",
   });
 
