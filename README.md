@@ -27,7 +27,5 @@ Link Stats
 
 TODO:
 
-- add auth to /api/links/:hostname/rawdata
-- modify/delete existing links (and require auth to do so)
 - modify/delete users, usernames, passwords (when authenticated)
 - clean up linkstats into something more usable by frontend and useful to owner

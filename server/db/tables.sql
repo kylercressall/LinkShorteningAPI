@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS links (
 
   FOREIGN KEY (userOwner) REFERENCES users(userId)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS host_unique ON links(hostUrl);
 
 -- Link stat is created every time a user clicks on the link
 CREATE TABLE IF NOT EXISTS link_stats (
